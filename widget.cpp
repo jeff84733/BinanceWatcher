@@ -203,7 +203,7 @@ Widget::Widget(QWidget *parent) :
 
     setWindowTitle(UiSettings["title"].toString() +" " +AppVersion);
     this->resize(UiSettings["width"].toInt(), UiSettings["height"].toInt());
-    this->move(qMax(0, UiSettings["x"].toInt()), qMax(30, UiSettings["y"].toInt()));
+    this->move(qMax(0, UiSettings["x"].toInt()), qMax(0, UiSettings["y"].toInt()));
     QCoreApplication::postEvent(this, new QEvent(static_cast<QEvent::Type>(MyEvent)));
 }
 /****************************************************************************************************/
