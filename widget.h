@@ -22,11 +22,12 @@ typedef struct _PAIR_PROPERTY_NAME {
     double dLowPrice;
     double dWeightedAvgPrice;
     double dQuoteVolume;
+    double dObstacle;
 } PAIR_PROPERTY_NAME;
 
 typedef union _PAIR_PROPERTY {
     PAIR_PROPERTY_NAME name;
-    double id[6];
+    double id[7];
 } PAIR_PROPERTY;
 
 typedef struct _PAIR_INFO

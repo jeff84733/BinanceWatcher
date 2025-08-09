@@ -142,6 +142,7 @@ Widget::Widget(QWidget *parent) :
                              MSG(L"（降冪）最低"),
                              MSG(L"（降冪）加權平均"),
                              MSG(L"（降冪）成交量"),
+                             MSG(L"（降冪）阻力"),
                              MSG(L"（升冪）交易對"),
                              MSG(L"（升冪）當前"),
                              MSG(L"（升冪）振幅"),
@@ -149,6 +150,7 @@ Widget::Widget(QWidget *parent) :
                              MSG(L"（升冪）最低"),
                              MSG(L"（升冪）加權平均"),
                              MSG(L"（升冪）成交量"),
+                             MSG(L"（升冪）阻力"),
                          });
     uiSortType->setCurrentIndex(UiSettings["sort"].toInt());
     QObject::connect(uiSortType, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &Widget::onUiSortTypeCurrentIndexChanged);
@@ -173,8 +175,8 @@ Widget::Widget(QWidget *parent) :
     page->horizontalHeader()->setDefaultAlignment(Qt::AlignRight | Qt::AlignVCenter);
     page->horizontalHeader()->setStretchLastSection(false);
     page->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    page->setColumnCount(6);
-    page->setHorizontalHeaderLabels({MSG(L"當前"), MSG(L"振幅"), MSG(L"最高"), MSG(L"最低"), MSG(L"加權平均"), MSG(L"成交量")});
+    page->setColumnCount(7);
+    page->setHorizontalHeaderLabels({MSG(L"當前"), MSG(L"振幅"), MSG(L"最高"), MSG(L"最低"), MSG(L"加權平均"), MSG(L"成交量"), MSG(L"阻力")});
     page->verticalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     page->verticalHeader()->setStretchLastSection(false);
     page->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -183,7 +185,7 @@ Widget::Widget(QWidget *parent) :
     for(int i=0; i<PairNames.count(); i++) {
         pairInfos.append(PAIR_INFO({i, QString(), QString(), PairNames[i], PAIR_PROPERTY()}));
         pairRanks.append(&pairInfos[i]);
-        for(int j=0; j<6; j++) {
+        for(int j=0; j<7; j++) {
             QTableWidgetItem* bar = new QTableWidgetItem("0.00000000");
             bar->setTextAlignment(Qt::AlignRight | Qt::AlignTop);
             page->setItem(i, j, bar);
@@ -300,15 +302,18 @@ void Widget::onApi_EXCHANGEINFO(QNetworkReply* reply)
 {
     QJsonParseError e;
     QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll(), &e);
+    //qDebug() << "onApi_EXCHANGEINFO";
     if(e.error == QJsonParseError::NoError && !jsonDoc.isNull()) {
         QJsonArray symbols = jsonDoc.object().value("symbols").toArray();
         foreach(const QJsonValue& v, symbols) {
             QJsonObject jsonObject = v.toObject();
+            //qDebug() << jsonObject.value("symbol").toString();
             QString szSymbol = jsonObject.value("symbol").toString();
             for(int i=0; i<PairNames.count(); i++)
                 if(PairNames[i] == szSymbol) {
                     pairInfos[i].szBaseAsset = jsonObject.value("baseAsset").toString();
                     pairInfos[i].szQuoteAsset = jsonObject.value("quoteAsset").toString();
+                    //qDebug() << "onApi_EXCHANGEINFO" << pairInfos[i].szBaseAsset << pairInfos[i].szQuoteAsset;
                 }
         }
     }
@@ -317,6 +322,7 @@ void Widget::onApi_EXCHANGEINFO(QNetworkReply* reply)
 void Widget::onApi_PRICE(QNetworkReply* reply)
 {
     QVariant symbol = reply->property("PairId");
+    //qDebug() << "onApi_PRICE";
     if(!symbol.isNull()) {
         QJsonParseError e;
         QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll(), &e);
@@ -336,6 +342,7 @@ void Widget::onApi_PRICE24HR(QNetworkReply* reply)
         QJsonParseError e;
         QByteArray ba = reply->readAll();
         QJsonDocument jsonDoc = QJsonDocument::fromJson(ba, &e);
+        //qDebug() << "onApi_PRICE24HR" << jsonDoc;
         if(e.error == QJsonParseError::NoError && !jsonDoc.isNull()) {
             QJsonObject jsonObject = jsonDoc.object();
             QJsonValue jsonValue;
@@ -343,6 +350,12 @@ void Widget::onApi_PRICE24HR(QNetworkReply* reply)
                 QJsonValue jsonValue = jsonObject.value(PairPropertyNames[i]);
                 if(!jsonValue.isNull())
                     pairInfos[nPairId].propertys.id[i] = jsonValue.toString().toDouble();
+            }
+            //qDebug() << pairInfos[nPairId].propertys.name.dLastPrice;
+            {
+                //計算阻力 = 成交量 /(最高 -最低)百分比
+                pairInfos[nPairId].propertys.id[6] =
+                        pairInfos[nPairId].propertys.id[5] /((pairInfos[nPairId].propertys.id[2] /pairInfos[nPairId].propertys.id[3] -1) *100);
             }
             tmrRefreshPairInfos.start();
         }
@@ -407,34 +420,42 @@ static bool FnSortPairInfo_7(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dQuoteVolume > info2->propertys.name.dQuoteVolume;
 }
-//升冪排序
 static bool FnSortPairInfo_8(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+{
+    return info1->propertys.name.dObstacle > info2->propertys.name.dObstacle;
+}
+//升冪排序
+static bool FnSortPairInfo_9(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return (info1->szBaseAsset.localeAwareCompare(info2->szBaseAsset) < 0);
 }
-static bool FnSortPairInfo_9(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_10(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dLastPrice < info2->propertys.name.dLastPrice;
 }
-static bool FnSortPairInfo_10(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_11(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dPriceChangePercent < info2->propertys.name.dPriceChangePercent;
 }
-static bool FnSortPairInfo_11(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_12(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dHighPrice < info2->propertys.name.dHighPrice;
 }
-static bool FnSortPairInfo_12(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_13(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dLowPrice < info2->propertys.name.dLowPrice;
 }
-static bool FnSortPairInfo_13(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_14(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dWeightedAvgPrice < info2->propertys.name.dWeightedAvgPrice;
 }
-static bool FnSortPairInfo_14(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+static bool FnSortPairInfo_15(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
 {
     return info1->propertys.name.dQuoteVolume < info2->propertys.name.dQuoteVolume;
+}
+static bool FnSortPairInfo_16(const PAIR_INFO* &info1, const PAIR_INFO* &info2)
+{
+    return info1->propertys.name.dObstacle < info2->propertys.name.dObstacle;
 }
 /****************************************************************************************************/
 void Widget::refreshPairRanks()
@@ -455,6 +476,8 @@ void Widget::refreshPairRanks()
     case 12: std::sort(pairRanks.begin(), pairRanks.end(), FnSortPairInfo_12); break;
     case 13: std::sort(pairRanks.begin(), pairRanks.end(), FnSortPairInfo_13); break;
     case 14: std::sort(pairRanks.begin(), pairRanks.end(), FnSortPairInfo_14); break;
+    case 15: std::sort(pairRanks.begin(), pairRanks.end(), FnSortPairInfo_15); break;
+    case 16: std::sort(pairRanks.begin(), pairRanks.end(), FnSortPairInfo_16); break;
     }
 }
 /****************************************************************************************************/
@@ -483,7 +506,7 @@ void Widget::refreshUi()
     refreshPairRanks();
     for(int i=0; i<pairRanks.count(); i++) {
         page->verticalHeaderItem(i)->setText(pairRanks[i]->szBaseAsset +"/" +pairRanks[i]->szQuoteAsset);
-        for(int j=0; j<6; j++) {
+        for(int j=0; j<7; j++) {
             QTableWidgetItem* item = page->item(i, j);
             if(j == 1)
                 SetPairPriceChangePercent(item, pairRanks[i]->propertys.id[j]);
